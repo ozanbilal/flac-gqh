@@ -44,7 +44,7 @@ jobs:
           cgroup="/sys/fs/cgroup/system.slice/$unit"
           sandbox_root=$(/usr/bin/mktemp -d "${RUNNER_TEMP}/flac-gqh-root.XXXXXXXX")
           /usr/bin/chmod 0755 "$sandbox_root"
-          /usr/bin/mkdir -p "$sandbox_root"/{usr,src,scratch,etc,dev,cgroup}
+          /usr/bin/mkdir -p "$sandbox_root"/{usr,src,scratch,etc,dev,cgroup,run}
           /usr/bin/ln -s usr/bin "$sandbox_root/bin"
           /usr/bin/ln -s usr/lib "$sandbox_root/lib"
           /usr/bin/ln -s usr/lib64 "$sandbox_root/lib64"
@@ -141,7 +141,7 @@ jobs:
             -p "BindReadOnlyPaths=/usr $GITHUB_WORKSPACE:/src $cgroup:/cgroup" \
             -p 'WorkingDirectory=/scratch' \
             -p 'TemporaryFileSystem=/scratch:rw,nosuid,nodev,size=512M,mode=1777' \
-            -p 'InaccessiblePaths=-/home -/root -/run -/var -/tmp -/proc -/sys -/dev/shm -/dev/mqueue' \
+            -p 'InaccessiblePaths=-+/home -+/root +/run -+/var -+/tmp -+/proc -+/sys -+/dev/shm -+/dev/mqueue' \
             -p 'DynamicUser=yes' -p 'NoNewPrivileges=yes' -p 'CapabilityBoundingSet=' \
             -p 'PrivateNetwork=yes' -p 'PrivateDevices=yes' -p 'PrivateIPC=yes' \
             -p 'ProtectSystem=strict' -p 'ProtectHome=yes' -p 'RestrictNamespaces=yes' \
