@@ -1,0 +1,7 @@
+cff-version: 1.2.0
+message: 'If you use this implementation, please cite the software and the underlying GQ/H literature.'
+title: 'FLAC3D GQ/H + MRDF constitutive model implementation'
+type: software
+authors:
+  - family-names: Bilal
+    given-names: Ozan

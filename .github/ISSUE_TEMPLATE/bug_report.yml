@@ -1,0 +1,21 @@
+name: Bug report
+description: Report a reproducible problem with the model or build.
+body:
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Observed behavior and expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Minimal synthetic reproduction
+      description: Do not attach confidential client inputs, licensed SDK files, or credentials.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment and evidence
+      description: Include repository revision, FLAC3D/SDK version if applicable, compiler, units, and relevant non-sensitive logs.

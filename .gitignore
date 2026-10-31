@@ -1,0 +1,12 @@
+/out/
+/artifacts/
+*.obj
+*.o
+*.lib
+*.dll
+*.exp
+*.pdb
+*.ilk
+*.exe
+*.pyc
+__pycache__/

@@ -1,0 +1,7 @@
+#define MAJOR_VERSION     9
+#define UPDATE_VERSION    3
+#define REVISION_VERSION  1
+#define FILE_DESCRIPTION  "GQ/H + MRDF-UIUC FLAC3D 9 constitutive model"
+#define INTERNAL_NAME     "cmodelgqh-mrdf009"
+#define ORIGINAL_FILENAME "cmodelgqh-mrdf009.dll"
+#define PRODUCT_NAME      "GQ/H + MRDF-UIUC FLAC3D constitutive model"

@@ -1,0 +1,154 @@
+name: Isolated constitutive core tests
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  core:
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check isolation, then build and test
+        shell: bash
+        env:
+          GQH_COMPILER: ${{ matrix.compiler }}
+        run: |
+          set -euo pipefail
+          case "$GQH_COMPILER" in
+            gcc) compiler=/usr/bin/g++ ;;
+            clang) compiler=/usr/bin/clang++ ;;
+            *) printf '%s\n' 'Unexpected compiler' >&2; exit 1 ;;
+          esac
+          for run_number in "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"; do
+            case "$run_number" in
+              ''|*[!0-9]*) printf '%s\n' 'Unexpected run identifier' >&2; exit 1 ;;
+            esac
+          done
+          case "$GITHUB_WORKSPACE" in
+            *[[:space:]:]*) printf '%s\n' 'Unsupported workspace path' >&2; exit 1 ;;
+          esac
+          test -r /sys/fs/cgroup/cgroup.controllers
+          for controller in cpu memory pids; do
+            /usr/bin/grep -qw "$controller" /sys/fs/cgroup/cgroup.controllers
+          done
+          unit="flac-gqh-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${GQH_COMPILER}.service"
+          cgroup="/sys/fs/cgroup/system.slice/$unit"
+          sandbox_root=$(/usr/bin/mktemp -d "${RUNNER_TEMP}/flac-gqh-root.XXXXXXXX")
+          /usr/bin/chmod 0755 "$sandbox_root"
+          /usr/bin/mkdir -p "$sandbox_root"/{usr,src,scratch,etc,dev,cgroup}
+          /usr/bin/ln -s usr/bin "$sandbox_root/bin"
+          /usr/bin/ln -s usr/lib "$sandbox_root/lib"
+          /usr/bin/ln -s usr/lib64 "$sandbox_root/lib64"
+          sandbox_program=$(/usr/bin/cat <<'PY'
+          import ctypes
+          import errno
+          import os
+          import resource
+          import socket
+          import stat
+          import subprocess
+          import sys
+
+          def require(condition, message):
+              if not condition:
+                  raise RuntimeError('Sandbox preflight failed: ' + message)
+
+          expected_env = {
+              'PATH': '/usr/local/bin:/usr/bin:/bin',
+              'HOME': '/scratch/home',
+              'TMPDIR': '/scratch/tmp',
+              'LANG': 'C',
+              'LC_ALL': 'C',
+          }
+          require(all(os.environ.get(k) == v for k, v in expected_env.items()), 'environment values')
+          require(set(os.environ) == set(expected_env), 'unexpected environment variable')
+          require(os.getuid() != 0, 'process must not run as root')
+          for path in ('/', '/usr', '/src', '/cgroup'):
+              require(bool(os.statvfs(path).f_flag & os.ST_RDONLY), path + ' must be read-only')
+          scratch = os.statvfs('/scratch')
+          require(not (scratch.f_flag & os.ST_RDONLY), 'scratch must be writable')
+          require(scratch.f_blocks * scratch.f_frsize <= 512 * 1024 * 1024, 'scratch size limit')
+          for path in ('/home', '/root', '/run', '/var', '/tmp', '/proc', '/sys'):
+              if os.path.lexists(path):
+                  require(not any(os.access(path, mode) for mode in (os.R_OK, os.W_OK, os.X_OK)),
+                          path + ' must not be accessible')
+          require(not os.access('/dev', os.W_OK), '/dev must not be writable')
+          for path in ('/dev/shm', '/dev/mqueue'):
+              if os.path.lexists(path):
+                  require(not any(os.access(path, mode) for mode in (os.R_OK, os.W_OK, os.X_OK)),
+                          path + ' must not be accessible')
+          for directory, _, files in os.walk('/usr', followlinks=False):
+              for filename in files:
+                  try:
+                      mode = os.lstat(os.path.join(directory, filename)).st_mode
+                  except OSError:
+                      continue
+                  require(not stat.S_ISSOCK(mode), 'socket exposed in toolchain')
+          for name, limit in ((resource.RLIMIT_FSIZE, 64 * 1024 * 1024),
+                              (resource.RLIMIT_NPROC, 64),
+                              (resource.RLIMIT_CPU, 300),
+                              (resource.RLIMIT_AS, 1536 * 1024 * 1024)):
+              soft, hard = resource.getrlimit(name)
+              require(0 < soft <= limit and 0 < hard <= limit, 'resource limit ' + str(name))
+          def cgroup_value(name):
+              with open('/cgroup/' + name, encoding='ascii') as stream:
+                  return stream.read().strip()
+          memory_max = cgroup_value('memory.max')
+          pids_max = cgroup_value('pids.max')
+          cpu_quota, cpu_period = cgroup_value('cpu.max').split()
+          require(memory_max != 'max' and int(memory_max) <= 1536 * 1024 * 1024, 'cgroup memory')
+          require(pids_max != 'max' and int(pids_max) <= 64, 'cgroup processes')
+          require(cpu_quota != 'max' and int(cpu_quota) <= 2 * int(cpu_period), 'cgroup CPU')
+          for family in (socket.AF_INET, socket.AF_INET6, socket.AF_UNIX):
+              try:
+                  s = socket.socket(family, socket.SOCK_STREAM)
+              except OSError as exc:
+                  require(exc.errno in (errno.EPERM, errno.EACCES, errno.EAFNOSUPPORT), 'socket filter')
+              else:
+                  s.close()
+                  raise RuntimeError('Sandbox preflight failed: socket creation permitted')
+          libc = ctypes.CDLL(None, use_errno=True)
+          require(libc.prctl(39, 0, 0, 0, 0) == 1, 'no_new_privs')
+          result = libc.syscall(425, 1, ctypes.c_void_p(0))  # io_uring_setup on x86_64
+          require(result == -1 and ctypes.get_errno() in (errno.EPERM, errno.ENOSYS), 'io_uring filter')
+          compiler = sys.argv[1]
+          require(compiler in ('/usr/bin/g++', '/usr/bin/clang++'), 'compiler allowlist')
+          require(os.access(compiler, os.X_OK), 'compiler unavailable')
+          os.makedirs(expected_env['HOME'], exist_ok=True)
+          os.makedirs(expected_env['TMPDIR'], exist_ok=True)
+          commands = [
+              ['cmake', '-S', '/src', '-B', '/scratch/build', '-DBUILD_TESTING=ON',
+               '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_CXX_COMPILER=' + compiler],
+              ['cmake', '--build', '/scratch/build', '--parallel', '2'],
+              ['ctest', '--test-dir', '/scratch/build', '--output-on-failure'],
+          ]
+          print('Sandbox preflight passed; running portable core checks.', flush=True)
+          for command in commands:
+              subprocess.run(command, cwd='/scratch', env=expected_env, check=True, timeout=540)
+          PY
+          )
+          /usr/bin/sudo /usr/bin/systemd-run --quiet --pipe --wait --collect --expand-environment=no --unit="$unit" \
+            -p "RootDirectory=$sandbox_root" \
+            -p "BindReadOnlyPaths=/usr $GITHUB_WORKSPACE:/src $cgroup:/cgroup" \
+            -p 'WorkingDirectory=/scratch' \
+            -p 'TemporaryFileSystem=/scratch:rw,nosuid,nodev,size=512M,mode=1777' \
+            -p 'InaccessiblePaths=-/home -/root -/run -/var -/tmp -/proc -/sys -/dev/shm -/dev/mqueue' \
+            -p 'DynamicUser=yes' -p 'NoNewPrivileges=yes' -p 'CapabilityBoundingSet=' \
+            -p 'PrivateNetwork=yes' -p 'PrivateDevices=yes' -p 'PrivateIPC=yes' \
+            -p 'ProtectSystem=strict' -p 'ProtectHome=yes' -p 'RestrictNamespaces=yes' \
+            -p 'SystemCallArchitectures=native' -p 'SystemCallErrorNumber=EPERM' \
+            -p 'SystemCallFilter=~@network-io @mount io_uring_setup io_uring_enter io_uring_register' \
+            -p 'MemoryMax=1536M' -p 'TasksMax=64' -p 'CPUQuota=200%' \
+            -p 'LimitAS=1536M' -p 'LimitNPROC=64' -p 'LimitFSIZE=64M' -p 'LimitCPU=300' \
+            -p 'RuntimeMaxSec=600' \
+            /usr/bin/env -i PATH=/usr/local/bin:/usr/bin:/bin HOME=/scratch/home \
+            TMPDIR=/scratch/tmp LANG=C LC_ALL=C /usr/bin/python3 -c "$sandbox_program" "$compiler"
