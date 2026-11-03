@@ -54,15 +54,13 @@ The GQ/H backbone is described by Groholski et al. (2016), *Simplified Model for
 
 The optional Mohr-Coulomb cap (`cohesion`, `friction`) is not yet verified for 3D models in which neighbouring zones can move vertically relative to each other, for example models with piles, walls, foundations or other structural elements.
 
-The adapters apply GQ/H to the shear components only; the normal deviatoric components stay elastic at `gmax`. When the cap is active, the principal-space return reduces both the shear stress and the normal deviator. In a FLAC3D 6 free-field test (periodic 5 × 5 m plan, 1 m zones, gravity with K0 = 0.667, static Tresca ratio about 0.9 near the base), this produced a zone-scale alternation of peak shear strain with depth and a higher surface acceleration than the equivalent 1 × 1 m column. The 3D and 1D results agreed when vertical velocity was fixed during shaking (spectral band ratio 0.999). FLAC3D's built-in `mohr-coulomb` model under the same setup gave matching 3D and 1D results.
+Both adapters use the same return rule. They apply GQ/H to the shear components only; the normal deviatoric components stay elastic at `gmax`. When the cap is active, the principal-space return reduces both the shear stress and the normal deviator. In a FLAC3D free-field test (periodic 5 × 5 m plan, 1 m zones, gravity with K0 = 0.667, static Tresca ratio about 0.9 near the base), this produced a zone-scale alternation of peak shear strain with depth and a higher surface acceleration than the equivalent 1 × 1 m column. The 3D and 1D results agreed when vertical velocity was fixed during shaking (spectral band ratio 0.999). FLAC3D's built-in `mohr-coulomb` model under the same setup gave matching 3D and 1D results.
 
 Until this is resolved:
 
 - With the cap off (`cohesion` set very large), this behaviour was not observed.
 - In free-field site-response models, fixing vertical velocity during the dynamic stage avoids it.
 - In models that need vertical freedom, check the result against a model with the cap off or with a built-in plasticity model before using it.
-
-The FLAC3D 9 adapter uses the same return rule and has not been tested for this case.
 
 ## Contributions and security
 
