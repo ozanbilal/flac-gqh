@@ -50,6 +50,20 @@ Select parameters from reviewed material data or an explicitly reviewed calibrat
 
 The GQ/H backbone is described by Groholski et al. (2016), *Simplified Model for Small-Strain Nonlinearity and Strength in 1D Seismic Site Response Analysis*, DOI [10.1061/(ASCE)GT.1943-5606.0001496](https://doi.org/10.1061/(ASCE)GT.1943-5606.0001496). See [scientific references](docs/references.md) for the named reference-curve models. These citations provide background and do not assert that the publications' authors validated this implementation.
 
+## Known limitation: Mohr-Coulomb cap with free vertical motion
+
+The optional Mohr-Coulomb cap (`cohesion`, `friction`) is not yet verified for 3D models in which neighbouring zones can move vertically relative to each other, for example models with piles, walls, foundations or other structural elements.
+
+The adapters apply GQ/H to the shear components only; the normal deviatoric components stay elastic at `gmax`. When the cap is active, the principal-space return reduces both the shear stress and the normal deviator. In a FLAC3D 6 free-field test (periodic 5 × 5 m plan, 1 m zones, gravity with K0 = 0.667, static Tresca ratio about 0.9 near the base), this produced a zone-scale alternation of peak shear strain with depth and a higher surface acceleration than the equivalent 1 × 1 m column. The 3D and 1D results agreed when vertical velocity was fixed during shaking (spectral band ratio 0.999). FLAC3D's built-in `mohr-coulomb` model under the same setup gave matching 3D and 1D results.
+
+Until this is resolved:
+
+- With the cap off (`cohesion` set very large), this behaviour was not observed.
+- In free-field site-response models, fixing vertical velocity during the dynamic stage avoids it.
+- In models that need vertical freedom, check the result against a model with the cap off or with a built-in plasticity model before using it.
+
+The FLAC3D 9 adapter uses the same return rule and has not been tested for this case.
+
 ## Contributions and security
 
 See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), and [AGENTS.md](AGENTS.md). The workflows include an isolated Linux core-test design, build-free CodeQL, secret scanning, dependency review and GitHub Actions update proposals. The core-test job is configured for pushes to `main` and manual runs; pull requests receive static scans but do not run the core-test job. See [CI isolation](docs/ci-isolation.md) for the fail-closed preflight, limits, and current verification gaps. These workflows have not yet been run on GitHub. CodeQL's adapter coverage may be incomplete because the proprietary SDK is not present.
